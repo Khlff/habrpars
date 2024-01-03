@@ -3,42 +3,89 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/Khlff/habrpars/internal/habrpars"
-	"github.com/jackc/pgx/v5"
-	"log"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"time"
 )
 
 type Service interface {
-	GetHubs(ctx context.Context) ([]string, error)
-	AddArticle(ctx context.Context, article habrpars.Article) error
+	GetHubs(ctx context.Context) ([]Hub, error)
+	AddArticle(ctx context.Context, article Article) error
 }
 
 type Postgres struct {
-	DB *pgx.Conn
+	Pool *pgxpool.Pool
 }
 
-func (pg *Postgres) GetHubs(ctx context.Context) ([]string, error) {
-	query := fmt.Sprintf("SELECT 'hub_url' FROM 'hubs'")
-	rows, err := pg.DB.Query(ctx, query)
+type Article struct {
+	Header     string
+	Date       time.Time
+	URL        string
+	AuthorName string
+	AuthorLink string
+	HubID      string
+	Text       string
+}
+
+type Hub struct {
+	ID  string
+	URL string
+}
+
+type PgErrorCode string
+
+var AlreadyExistError PgErrorCode = "23505"
+
+func (pg *Postgres) GetHubs(ctx context.Context) ([]Hub, error) {
+	conn, err := pg.Pool.Acquire(ctx)
 	if err != nil {
-		log.Printf("Error while exec sql querry: %v", err)
+		return nil, fmt.Errorf("unable to acquire a connection: %v", err)
+	}
+	defer conn.Release()
+
+	query := `SELECT id, url FROM hubs`
+	rows, err := conn.Query(ctx, query)
+	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var hubsLinks []string
+	var hubs []Hub
 	for rows.Next() {
-		var hub string
-		err = rows.Scan(&hub)
+		var hub Hub
+		err = rows.Scan(&hub.ID, &hub.URL)
 		if err != nil {
 			return nil, err
 		}
-		hubsLinks = append(hubsLinks, hub)
+		hubs = append(hubs, hub)
 	}
 
-	return hubsLinks, nil
+	return hubs, nil
 }
 
-func (pg *Postgres) AddArticle(ctx context.Context, article habrpars.Article) error {
+func (pg *Postgres) AddArticle(ctx context.Context, article Article) error {
+	conn, err := pg.Pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to acquire a connection: %v", err)
+	}
+	defer conn.Release()
+
+	query := `INSERT INTO articles (
+                        header, publication_date, url, text, author_name, author_url, hub_id
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+
+	_, err = conn.Exec(
+		ctx, query,
+		article.Header,
+		article.Date,
+		article.URL,
+		article.Text,
+		article.AuthorName,
+		article.AuthorLink,
+		article.HubID,
+	)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

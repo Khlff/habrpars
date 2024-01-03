@@ -2,48 +2,53 @@ package habrpars
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Khlff/habrpars/internal/service"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"io"
-	"log"
 	"net/http"
-	"strings"
+	"sync/atomic"
 	"time"
 )
 
-const BaseHabrUrl string = "https://habr.com"
-
-type Article struct {
-	Header     string
-	Date       time.Time
-	Link       string
-	Author     string
-	AuthorLink string
-	Hub        string
-}
+const BaseHabrURL string = "https://habr.com"
 
 type Parser struct {
-	timeoutInSeconds int64
-	serviceDB        service.Service
+	serviceDB service.Service
 }
 
 func NewParser(serv service.Service) Parser {
 	return Parser{serviceDB: serv}
 }
 
-func (p *Parser) Start(ctx context.Context, timeout int64, workersNumber int) error {
-	ticker := time.NewTicker(time.Duration(timeout) * time.Second)
+func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumber int) error {
+	ticker := time.NewTicker(time.Duration(intervalInSeconds) * time.Second)
 	defer ticker.Stop()
+
+	processFunc := func() error {
+		start := time.Now()
+		err := p.process(ctx, workersNumber)
+		if err != nil {
+			return err
+		}
+		log.Info().Int64("dur ms", time.Since(start).Milliseconds()).Msg("successful work")
+		return nil
+	}
+
+	if err := processFunc(); err != nil {
+		return err
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			err := p.process(ctx, workersNumber)
-			if err != nil {
+			if err := processFunc(); err != nil {
 				return err
 			}
 		}
@@ -51,46 +56,50 @@ func (p *Parser) Start(ctx context.Context, timeout int64, workersNumber int) er
 }
 
 func (p *Parser) process(ctx context.Context, workersNum int) error {
-	hubsUrls, err := p.serviceDB.GetHubs(ctx)
+	hubs, err := p.serviceDB.GetHubs(ctx)
 	if err != nil {
 		return err
 	}
+	log.Debug().Int("hubs collected", len(hubs)).Msg("")
 
-	for _, hubUrl := range hubsUrls {
-		articles, err := p.getArticlesFromHub(ctx, hubUrl, workersNum)
+	for _, hub := range hubs {
+		log.Debug().Str("hub id", hub.ID).Msg("")
+		articles, err := p.getArticlesFromHub(ctx, hub, workersNum)
 		if err != nil {
-			log.Println(err)
+			log.Err(err).Msg("")
 			continue
 		}
+		log.Debug().Int("articles collected", len(articles)).Msg("")
 
-		err = p.saveArticles(ctx, workersNum, &articles)
+		successfullySaved, err := p.saveArticles(ctx, workersNum, &articles)
 		if err != nil {
-			log.Println(err)
+			log.Err(err).Msg("")
 			continue
 		}
+		log.Debug().Int64("articles successfully saved", successfullySaved).Msg("")
 	}
 	return nil
 }
 
-func (p *Parser) getArticlesFromHub(ctx context.Context, hubUrl string, workersNumber int) ([]Article, error) {
-	links, err := p.getLinks(BaseHabrUrl + hubUrl)
+func (p *Parser) getArticlesFromHub(ctx context.Context, hub service.Hub, workersNumber int) ([]service.Article, error) {
+	links, err := p.getArticlesUrls(BaseHabrURL + hub.URL) //unsec
 	if err != nil {
 		return nil, err
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(workersNumber)
-	articles := make([]Article, len(links))
+	articles := make([]service.Article, len(links))
 
 	for i, link := range links {
 		i, link := i, link
 		g.Go(func() error {
-			article, err := p.getArticle(BaseHabrUrl + link)
-			if err == nil {
-				article.Hub = hubUrl
+			article, gErr := p.getArticle(BaseHabrURL + link)
+			if gErr == nil {
+				article.HubID = hub.ID
 				articles[i] = article
 			}
-			return err
+			return gErr
 		})
 	}
 
@@ -101,7 +110,7 @@ func (p *Parser) getArticlesFromHub(ctx context.Context, hubUrl string, workersN
 	return articles, nil
 }
 
-func (p *Parser) getLinks(url string) ([]string, error) {
+func (p *Parser) getArticlesUrls(url string) ([]string, error) {
 	res, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -110,7 +119,7 @@ func (p *Parser) getLinks(url string) ([]string, error) {
 	defer func(Body io.ReadCloser) {
 		err = Body.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Err(err).Msg("error while close body")
 		}
 	}(res.Body)
 
@@ -123,87 +132,71 @@ func (p *Parser) getLinks(url string) ([]string, error) {
 		return nil, err
 	}
 
-	var links []string
-
-	doc.Find(".tm-article-snippet.tm-article-snippet > h2").Each(func(i int, s *goquery.Selection) {
-		link, exist := s.Find("a").Attr("href")
-		if exist {
-			links = append(links, link)
-		}
-	})
-
-	return links, nil
+	return getUrls(doc), nil
 }
 
-func (p *Parser) getArticle(url string) (Article, error) {
+func (p *Parser) getArticle(url string) (service.Article, error) {
 	res, err := http.Get(url)
 	if err != nil {
-		return Article{}, err
+		return service.Article{}, err
 	}
 
 	defer func(Body io.ReadCloser) {
 		err = Body.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Err(err).Msg("error while close body")
 		}
 	}(res.Body)
 
 	if res.StatusCode != 200 {
-		return Article{}, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
+		return service.Article{}, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		return Article{}, err
+		return service.Article{}, err
 	}
 
-	article := Article{Link: url}
+	article := service.Article{URL: url}
 
-	articleData := doc.Find("div.tm-article-presenter__body > div.tm-misprint-area > div > article > div.tm-article-presenter__header")
+	author := getAuthor(doc)
+	article.AuthorLink = author.URL
+	article.AuthorName = author.Username
 
-	header := articleData.Find("div > h1")
-	article.Header = header.Text()
-
-	date := articleData.Find("div > div.tm-article-snippet__meta-container > div > span > span > span > time")
-	datetime, exist := date.Attr("datetime")
-	if exist {
-		parsedTime, err := time.Parse(time.RFC3339, datetime)
-		if err == nil {
-			article.Date = parsedTime
-		}
-	}
-
-	authorData := articleData.Find("div > div.tm-article-snippet__meta-container > div > span > span")
-	authorName := authorData.Find("a").Text()
-	article.Author = strings.TrimSpace(authorName)
-
-	authorLink, exist := authorData.Find("a").Attr("href")
-	if exist {
-		article.AuthorLink = authorLink
-	}
+	article.Header = getHeader(doc)
+	article.Date = getDate(doc)
+	article.Text = getText(doc)
 
 	return article, nil
 }
 
-func (p *Parser) saveArticles(ctx context.Context, workersNumber int, articles *[]Article) error {
+func (p *Parser) saveArticles(ctx context.Context, workersNumber int, articles *[]service.Article) (int64, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workersNumber)
+
+	var successfulSavedCounter atomic.Int64
 
 	for _, article := range *articles {
 		article := article
 		g.Go(func() error {
 			err := p.serviceDB.AddArticle(ctx, article)
 			if err != nil {
-				log.Println(err)
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) {
+					if pgErr.Code == string(service.AlreadyExistError) {
+						return nil
+					}
+				}
 				return err
 			}
+			successfulSavedCounter.Add(1)
 			return nil
 		})
 	}
 
 	if err := g.Wait(); err != nil {
-		return err
+		return 0, err
 	}
 
-	return nil
+	return successfulSavedCounter.Load(), nil
 }
