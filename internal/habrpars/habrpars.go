@@ -26,6 +26,16 @@ func NewParser(serv service.Service) Parser {
 }
 
 func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumber int) error {
+	err := p.serviceDB.CreateTables(ctx) // create tables if don`t exist
+	if err != nil {
+		return err
+	}
+
+	err = p.serviceDB.AddTestHubs(ctx) // add test hubs
+	if err != nil {
+		return err
+	}
+
 	ticker := time.NewTicker(time.Duration(intervalInSeconds) * time.Second)
 	defer ticker.Stop()
 

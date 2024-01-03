@@ -10,6 +10,8 @@ import (
 type Service interface {
 	GetHubs(ctx context.Context) ([]Hub, error)
 	AddArticle(ctx context.Context, article Article) error
+	CreateTables(ctx context.Context) error
+	AddTestHubs(ctx context.Context) error
 }
 
 type Postgres struct {
@@ -87,5 +89,51 @@ func (pg *Postgres) AddArticle(ctx context.Context, article Article) error {
 		return err
 	}
 
+	return nil
+}
+
+func (pg *Postgres) CreateTables(ctx context.Context) error {
+	tables := []string{
+		`CREATE TABLE IF NOT EXISTS hubs (
+			id  SERIAL PRIMARY KEY,
+			url VARCHAR(255) NOT NULL UNIQUE
+		)`,
+		`CREATE TABLE IF NOT EXISTS articles (
+			id               SERIAL PRIMARY KEY,
+			header           VARCHAR(255) NOT NULL,
+			publication_date DATE         NOT NULL,
+			url              TEXT         NOT NULL UNIQUE,
+			text             TEXT         NOT NULL,
+			author_name      VARCHAR(255) NOT NULL,
+			author_url       TEXT         NOT NULL,
+			hub_id           INT REFERENCES hubs(id)
+    	)`,
+	}
+
+	conn, err := pg.Pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to acquire a connection: %v", err)
+	}
+	defer conn.Release()
+
+	for _, query := range tables {
+		_, err = conn.Exec(ctx, query)
+		if err != nil {
+			return fmt.Errorf("failed to create table: %v", err)
+		}
+	}
+	fmt.Println("созданы таблицы")
+	return nil
+}
+
+func (pg *Postgres) AddTestHubs(ctx context.Context) error {
+	conn, err := pg.Pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to acquire a connection: %v", err)
+	}
+	defer conn.Release()
+
+	_, _ = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
+	fmt.Println("добавлены тестовые хабы")
 	return nil
 }

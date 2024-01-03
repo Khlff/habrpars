@@ -34,8 +34,6 @@ func main() {
 	dbService := service.Postgres{Pool: pool}
 	parser := habrpars.NewParser(&dbService)
 
-	log.Printf("Parser started")
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -48,7 +46,8 @@ func main() {
 			log.Error().Err(err).Msg("")
 			return
 		}
-	}(600, 5)
+	}(600, 8)
+	log.Printf("Parser started")
 
 	<-sigChan
 	cancel()
