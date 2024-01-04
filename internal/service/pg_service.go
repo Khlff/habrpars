@@ -133,10 +133,7 @@ func (pg *Postgres) AddTestHubs(ctx context.Context) error {
 	}
 	defer conn.Release()
 
-	_, err = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
-	if err != nil {
-		return fmt.Errorf("failed to add test hubs: %v", err)
-	}
+	_, _ = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
 
 	return nil
 }
