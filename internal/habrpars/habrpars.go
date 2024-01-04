@@ -79,7 +79,7 @@ func (p *Parser) process(ctx context.Context, workersNum int) error {
 			log.Err(err).Msg("")
 			continue
 		}
-		log.Debug().Int("articles collected", len(articles)).Msg("")
+		log.Debug().Msg("articles collected")
 
 		successfullySaved, err := p.saveArticles(ctx, workersNum, &articles)
 		if err != nil {
