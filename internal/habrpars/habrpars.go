@@ -31,7 +31,7 @@ func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumb
 		return err
 	}
 
-	err = p.serviceDB.AddTestHubs(ctx) // add test hubs
+	err = p.serviceDB.AddTestHubs(ctx) // add test hubs. delete later
 	if err != nil {
 		return err
 	}
