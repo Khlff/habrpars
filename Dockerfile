@@ -13,5 +13,4 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /habrpars ./cmd/habrpars/main.go
 
 FROM scratch
 COPY --from=builder /habrpars /habrpars
-EXPOSE 8080
 ENTRYPOINT ["/habrpars"]
