@@ -122,7 +122,7 @@ func (pg *Postgres) CreateTables(ctx context.Context) error {
 			return fmt.Errorf("failed to create table: %v", err)
 		}
 	}
-	fmt.Println("созданы таблицы")
+
 	return nil
 }
 
@@ -133,7 +133,10 @@ func (pg *Postgres) AddTestHubs(ctx context.Context) error {
 	}
 	defer conn.Release()
 
-	_, _ = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
-	fmt.Println("добавлены тестовые хабы")
+	_, err = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
+	if err != nil {
+		return fmt.Errorf("failed to add test hubs: %v", err)
+	}
+
 	return nil
 }

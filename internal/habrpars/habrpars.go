@@ -92,7 +92,7 @@ func (p *Parser) process(ctx context.Context, workersNum int) error {
 }
 
 func (p *Parser) getArticlesFromHub(ctx context.Context, hub service.Hub, workersNumber int) ([]service.Article, error) {
-	links, err := p.getArticlesUrls(BaseHabrURL + hub.URL) //unsec
+	links, err := p.getArticlesUrls(BaseHabrURL + hub.URL) // unsec
 	if err != nil {
 		return nil, err
 	}
