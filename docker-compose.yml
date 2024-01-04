@@ -17,7 +17,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/habrparse_db
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/habrparse_db
     depends_on:
       - postgres
 volumes:
