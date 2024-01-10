@@ -81,7 +81,7 @@ func (p *Parser) process(ctx context.Context, workersNum int) error {
 		}
 		log.Debug().Msg("articles collected")
 
-		successfullySaved, err := p.saveArticles(ctx, workersNum, &articles)
+		successfullySaved, err := p.saveArticles(ctx, workersNum, articles)
 		if err != nil {
 			log.Err(err).Msg("")
 			continue
@@ -180,13 +180,13 @@ func (p *Parser) getArticle(url string) (service.Article, error) {
 	return article, nil
 }
 
-func (p *Parser) saveArticles(ctx context.Context, workersNumber int, articles *[]service.Article) (int64, error) {
+func (p *Parser) saveArticles(ctx context.Context, workersNumber int, articles []service.Article) (int64, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workersNumber)
 
 	var successfulSavedCounter atomic.Int64
 
-	for _, article := range *articles {
+	for _, article := range articles {
 		article := article
 		g.Go(func() error {
 			err := p.serviceDB.AddArticle(ctx, article)
