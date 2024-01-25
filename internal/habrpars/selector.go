@@ -13,7 +13,7 @@ const authorSelector string = "div.tm-article-presenter__body > div.tm-misprint-
 const textBodySelector string = "#post-content-body > div:nth-child(1) > div > div"
 const textParSelector = textBodySelector + " > p"
 
-type authorData struct {
+type AuthorData struct {
 	Username string
 	URL      string
 }
@@ -36,7 +36,7 @@ func getDate(doc *goquery.Document) time.Time {
 	return time.Time{}
 }
 
-func getAuthor(doc *goquery.Document) authorData {
+func getAuthor(doc *goquery.Document) AuthorData {
 	authorInfo := doc.Find(authorSelector)
 	authorName := authorInfo.Find("a").Text()
 
@@ -46,7 +46,7 @@ func getAuthor(doc *goquery.Document) authorData {
 		authorURL = hrefAuthorURL
 	}
 
-	return authorData{
+	return AuthorData{
 		Username: authorName,
 		URL:      authorURL,
 	}

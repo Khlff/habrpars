@@ -41,7 +41,7 @@ func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumb
 
 	processFunc := func() error {
 		start := time.Now()
-		err := p.process(ctx, workersNumber)
+		err = p.process(ctx, workersNumber)
 		if err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumb
 		return nil
 	}
 
-	if err := processFunc(); err != nil {
+	if err = processFunc(); err != nil {
 		return err
 	}
 
@@ -58,7 +58,7 @@ func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumb
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := processFunc(); err != nil {
+			if err = processFunc(); err != nil {
 				return err
 			}
 		}
