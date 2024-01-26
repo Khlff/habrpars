@@ -15,10 +15,24 @@ services:
   habrpars:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: parseservice/Dockerfile
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/habrparse_db
+      SERVER_ADDR: :8080
+    ports:
+      - "8080:8080"
     depends_on:
       - postgres
+      - djangoapp
+
+  djangoapp:
+    build:
+      context: .
+      dockerfile: webclient/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+
 volumes:
   pgdata:

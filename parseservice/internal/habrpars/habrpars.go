@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"io"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,77 +19,82 @@ import (
 const BaseHabrURL string = "https://habr.com"
 
 type Parser struct {
-	serviceDB service.Service
+	serviceDB  service.Service
+	httpClient *http.Client
 }
 
-func NewParser(serv service.Service) Parser {
-	return Parser{serviceDB: serv}
+func NewParser(serv service.Service, httpClient *http.Client) Parser {
+	return Parser{serviceDB: serv, httpClient: httpClient}
 }
 
-func (p *Parser) Start(ctx context.Context, intervalInSeconds int64, workersNumber int) error {
-	err := p.serviceDB.CreateTables(ctx) // create tables if don`t exist
-	if err != nil {
-		return err
-	}
-
-	err = p.serviceDB.AddTestHubs(ctx) // add test hubs. delete later
-	if err != nil {
-		return err
-	}
-
-	ticker := time.NewTicker(time.Duration(intervalInSeconds) * time.Second)
-	defer ticker.Stop()
-
-	processFunc := func() error {
-		start := time.Now()
-		err = p.process(ctx, workersNumber)
-		if err != nil {
-			return err
-		}
-		log.Info().Int64("dur ms", time.Since(start).Milliseconds()).Msg("successful work")
-		return nil
-	}
-
-	if err = processFunc(); err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err = processFunc(); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (p *Parser) process(ctx context.Context, workersNum int) error {
+func (p *Parser) Start(ctx context.Context, workersNumber int) error {
 	hubs, err := p.serviceDB.GetHubs(ctx)
 	if err != nil {
 		return err
 	}
 	log.Debug().Int("hubs collected", len(hubs)).Msg("")
 
+	var wg sync.WaitGroup
+	wg.Add(len(hubs))
 	for _, hub := range hubs {
-		log.Debug().Str("hub id", hub.ID).Msg("")
+		func(hub service.Hub) {
+			defer wg.Done()
+			go func() {
+				err = p.process(ctx, workersNumber, hub)
+				if err != nil {
+					log.Err(err).Str("hub id", hub.ID).Msg("error in process")
+				}
+			}()
+		}(hub)
+	}
+
+	<-ctx.Done()
+	wg.Wait()
+	return ctx.Err()
+
+}
+
+func (p *Parser) process(ctx context.Context, workersNum int, hub service.Hub) error {
+	processFunc := func() error {
+		start := time.Now()
 		articles, err := p.getArticlesFromHub(ctx, hub, workersNum)
 		if err != nil {
 			log.Err(err).Msg("")
-			continue
+			return err
 		}
-		log.Debug().Msg("articles collected")
+		log.Debug().Str("hub url", hub.URL).Msg("articles collected")
 
 		successfullySaved, err := p.saveArticles(ctx, workersNum, articles)
 		if err != nil {
 			log.Err(err).Msg("")
-			continue
+			return err
 		}
-		log.Debug().Int64("articles successfully saved", successfullySaved).Msg("")
+		log.Debug().
+			Str("hub url", hub.URL).
+			Int64("count of successfully saved articles", successfullySaved).
+			Int64("dur ms", time.Since(start).Milliseconds()).
+			Msg("")
+
+		return nil
 	}
-	return nil
+
+	err := processFunc()
+	if err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(time.Duration(hub.Timeout) * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err = processFunc(); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (p *Parser) getArticlesFromHub(ctx context.Context, hub service.Hub, workersNumber int) ([]service.Article, error) {
@@ -121,7 +127,7 @@ func (p *Parser) getArticlesFromHub(ctx context.Context, hub service.Hub, worker
 }
 
 func (p *Parser) getArticlesUrls(url string) ([]string, error) {
-	res, err := http.Get(url)
+	res, err := p.httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +152,7 @@ func (p *Parser) getArticlesUrls(url string) ([]string, error) {
 }
 
 func (p *Parser) getArticle(url string) (service.Article, error) {
-	res, err := http.Get(url)
+	res, err := p.httpClient.Get(url)
 	if err != nil {
 		return service.Article{}, err
 	}

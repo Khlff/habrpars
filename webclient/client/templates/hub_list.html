@@ -1,0 +1,20 @@
+<h2>Hubs</h2>
+<ul>
+    {% for hub in hubs %}
+        <li>
+            {{ hub.url }} ({{ hub.timeout }} seconds) -
+            <a href="{% url 'hub_edit' pk=hub.pk %}">Edit</a> -
+            <form method="post" action="{% url 'hub_delete' pk=hub.pk %}" style="display: inline;">
+                {% csrf_token %}
+                <button type="submit">Delete</button>
+            </form>
+        </li>
+    {% endfor %}
+</ul>
+
+<h3>Add New Hub</h3>
+<form method="post" action="{% url 'hub_add' %}" class="hub-form">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Add Hub</button>
+</form>
