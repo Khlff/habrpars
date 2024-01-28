@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: 'habrparse_db'
+      POSTGRES_DB: 'habr'
     ports:
       - "5432:5432"
     volumes:
@@ -17,7 +17,7 @@ services:
       context: ./parseservice
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/habrparse_db
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/habr
       SERVER_ADDR: :8080
     ports:
       - "8082:8080"
