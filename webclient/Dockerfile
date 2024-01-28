@@ -1,10 +1,10 @@
-FROM python:3.9
+FROM python:3.10
 
 ENV DJANGO_ENV production
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY ../requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
