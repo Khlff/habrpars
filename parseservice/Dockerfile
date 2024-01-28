@@ -1,6 +1,6 @@
 FROM golang:1.21 as builder
 
-WORKDIR /app
+WORKDIR /parserapp
 COPY .. .
 
 RUN go mod tidy
