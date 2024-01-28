@@ -18,6 +18,7 @@ import (
 const MaxWorkersOnHub = 5
 
 func main() {
+	time.Sleep(5 * time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
