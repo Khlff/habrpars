@@ -1,7 +1,9 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from .models import Hub
-from .forms import HubForm
 import requests
+from django.conf import settings
+from django.shortcuts import render, get_object_or_404, redirect
+
+from .forms import HubForm
+from .models import Hub
 
 
 def hub_list(request):
@@ -43,4 +45,4 @@ def hub_delete(request, pk):
 
 
 def restart_parser():
-    requests.get('http://localhost:8080/restart')  # restart go script
+    requests.get(f'http://parseservice:{settings.HABRPARS_PORT}/restart')  # restart go parser
