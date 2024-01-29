@@ -11,7 +11,6 @@ type Service interface {
 	GetHubs(ctx context.Context) ([]Hub, error)
 	AddArticle(ctx context.Context, article Article) error
 	CreateTables(ctx context.Context) error
-	AddTestHubs(ctx context.Context) error
 }
 
 type Postgres struct {
@@ -29,8 +28,9 @@ type Article struct {
 }
 
 type Hub struct {
-	ID  string
-	URL string
+	ID      string
+	URL     string
+	Timeout int
 }
 
 type PgErrorCode string
@@ -44,7 +44,7 @@ func (pg *Postgres) GetHubs(ctx context.Context) ([]Hub, error) {
 	}
 	defer conn.Release()
 
-	query := `SELECT id, url FROM hubs`
+	query := `SELECT id, url, timeout FROM hubs`
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (pg *Postgres) GetHubs(ctx context.Context) ([]Hub, error) {
 	var hubs []Hub
 	for rows.Next() {
 		var hub Hub
-		err = rows.Scan(&hub.ID, &hub.URL)
+		err = rows.Scan(&hub.ID, &hub.URL, &hub.Timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +96,8 @@ func (pg *Postgres) CreateTables(ctx context.Context) error {
 	tables := []string{
 		`CREATE TABLE IF NOT EXISTS hubs (
 			id  SERIAL PRIMARY KEY,
-			url VARCHAR(255) NOT NULL UNIQUE
+			url VARCHAR(255) NOT NULL UNIQUE,
+			timeout INT
 		)`,
 		`CREATE TABLE IF NOT EXISTS articles (
 			id               SERIAL PRIMARY KEY,
@@ -122,18 +123,6 @@ func (pg *Postgres) CreateTables(ctx context.Context) error {
 			return fmt.Errorf("failed to create table: %v", err)
 		}
 	}
-
-	return nil
-}
-
-func (pg *Postgres) AddTestHubs(ctx context.Context) error {
-	conn, err := pg.Pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("unable to acquire a connection: %v", err)
-	}
-	defer conn.Release()
-
-	_, _ = conn.Exec(ctx, "INSERT INTO hubs (url) VALUES ('/ru/flows/design/articles/'), ('/ru/flows/develop/articles/')")
 
 	return nil
 }

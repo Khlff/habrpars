@@ -3,18 +3,22 @@ package main
 import (
 	"context"
 	"github.com/Khlff/habrpars/internal/habrpars"
+	"github.com/Khlff/habrpars/internal/httpserver"
 	"github.com/Khlff/habrpars/internal/service"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
-// DATABASE_URL_EXAMPLE := "postgres://username:password@localhost:5432/database_name"
+const MaxWorkersOnHub = 5
 
 func main() {
+	time.Sleep(5 * time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -32,21 +36,32 @@ func main() {
 	}
 
 	dbService := service.Postgres{Pool: pool}
-	parser := habrpars.NewParser(&dbService)
+	httpClient := http.Client{Timeout: 5 * time.Second}
+	parser := habrpars.NewParser(
+		&dbService,
+		&httpClient,
+	)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
+
 	wg.Add(1)
-	go func(interval int64, workersNumber int) {
+	go func() {
 		defer wg.Done()
-		err := parser.Start(ctx, interval, workersNumber)
+		httpserver.StartHTTPServer(ctx, &parser, cancel, MaxWorkersOnHub, os.Getenv("SERVER_ADDR"))
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := parser.Start(ctx, MaxWorkersOnHub)
 		if err != nil {
 			log.Error().Err(err).Msg("")
 			return
 		}
-	}(600, 8)
+	}()
 	log.Printf("Parser started")
 
 	<-sigChan
